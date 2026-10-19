@@ -715,6 +715,16 @@ SyncManager::execute()
                 }
             }
         } // if num_ranks_.rank == 1 i.e. only multithreading
+        else {
+            // A multi-rank run writes checkpoints only in a RANK sync.  Keep
+            // the next checkpoint time, so that computeNextInsert() schedules
+            // that RANK sync.  Passing MAX_SIMTIME_T dropped it whenever a
+            // THREAD sync came first (thread lookahead below the rank
+            // lookahead), and the next RANK sync then got the stale
+            // checkpoint time back from check() and inserted the SyncManager
+            // in the past (time fault).
+            next_checkpoint_time = checkpoint_->getNextCheckpointSimTime();
+        }
 
         if ( /*num_ranks_+.rank == 1*/ min_part_ == MAX_SIMTIME_T ) {
             if ( exit_->getRefCount() == 0 ) {
