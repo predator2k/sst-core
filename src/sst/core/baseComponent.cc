@@ -622,7 +622,18 @@ BaseComponent::configureLink_impl(const std::string& name, SimTime_t timebase, E
             }
         }
         tmp->setDefaultTimeBase(timebase);
-        tmp->setTag(sim_->getNextLinkOrderTag());
+        // yasai experiment: partition-independent link order tag (FNV-1a of component and port
+        // names) instead of the per-thread configure-order counter.
+        {
+            std::string key = getName() + ":" + name;
+            uint32_t    h   = 2166136261u;
+            for ( unsigned char c : key ) {
+                h ^= c;
+                h *= 16777619u;
+            }
+            if ( h == 0 || h == 0xFFFFFFFFu ) h = 1;
+            tmp->setTag(h);
+        }
 #ifdef __SST_DEBUG_EVENT_TRACKING__
         tmp->setSendingComponentInfo(my_info_->getName(), my_info_->getType(), name);
 #endif
