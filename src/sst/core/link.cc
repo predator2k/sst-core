@@ -60,7 +60,14 @@ SST::Core::Serialization::serialize_impl<Link*>::serialize_events(
             // Insert into the specified ActivityQueue after updating
             // delvery_info
             Link::updateEventDeliveryInfo(ev, delivery_info);
-            queue->insert(ev);
+            // Events for the TimeVortex are inserted by
+            // Simulation::restart() after all components are restored,
+            // in their checkpointed queue order.
+            Simulation* sim = Simulation::getSimulation();
+            if ( queue == sim->getTimeVortex() )
+                sim->tv_sort_.data.push_back(ev);
+            else
+                queue->insert(ev);
         }
     }
 }
@@ -135,6 +142,15 @@ SST::Core::Serialization::serialize_impl<Link*>::operator()(Link*& s, serializer
         SST_SER(s->type);
         SST_SER(s->mode);
         SST_SER(s->tag);
+        // Order tag of the events delivered to this link's owner.  The
+        // pair link holds it (for a sync link, the sync link that
+        // delivers the remote events into the TimeVortex), and it is
+        // saved so that same-time events keep their order after a
+        // restart.
+        {
+            uint32_t recv_tag = s->pair_link->tag;
+            SST_SER(recv_tag);
+        }
 
         /*
           Store handler for handler links, or store the contents
@@ -317,7 +333,17 @@ SST::Core::Serialization::serialize_impl<Link*>::operator()(Link*& s, serializer
         */
         SST_SER(s->type);
         SST_SER(s->mode);
-        SST_SER(s->tag);
+        {
+            // If the pair link was unpacked first, s->tag already
+            // holds the pair's receive tag, which is the tag the
+            // uninterrupted run used for events sent on s.
+            uint32_t send_tag;
+            uint32_t recv_tag;
+            SST_SER(send_tag);
+            SST_SER(recv_tag);
+            if ( s->tag == bit_util::type_max<uint32_t> ) s->tag = send_tag;
+            s->pair_link->tag = recv_tag;
+        }
 
         /*
           Get handler for handler links, or restore the contents
@@ -415,7 +441,7 @@ SST::Core::Serialization::serialize_impl<Link*>::operator()(Link*& s, serializer
         if ( is_restart_sync ) {
             s->pair_link->type = Link::SYNC;
             s->pair_link->mode = s->mode;
-            s->pair_link->tag  = s->tag;
+            // s->pair_link->tag already holds the restored receive tag
 
             s->pair_link->defaultTimeBase = 1;
             s->pair_link->id              = s->getId();

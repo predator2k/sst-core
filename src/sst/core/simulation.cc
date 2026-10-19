@@ -2295,6 +2295,20 @@ Simulation::restart(ConfigGraph* graph)
         }
     }
 
+    // Insert the restored events into the TimeVortex in the queue
+    // order they had when the checkpoint was written.  Link
+    // deserialization collects them in tv_sort_.data instead of
+    // inserting them in component/link order, which would renumber
+    // their queue order and change the order of same-time events
+    // whose priority and order tag are equal (all SelfLinks share one
+    // order tag).
+    std::stable_sort(tv_sort_.data.begin(), tv_sort_.data.end(),
+        [](const Activity* a, const Activity* b) { return a->getQueueOrder() < b->getQueueOrder(); });
+    for ( Activity* act : tv_sort_.data ) {
+        timeVortex->insert(act);
+    }
+    tv_sort_.data.clear();
+
     // If we are a parallel job, need to call
     // finalizeLinkConfigurations() in order to finish setting up all
     // the sync data structures. This will also cause the SyncManager to
@@ -2385,7 +2399,7 @@ Simulation::discoverRemoteLinks()
                 Link* link = link_restart_tracking[local_id];
                 link->type = Link::SYNC;
                 link->mode = link->pair_link->mode;
-                link->tag  = link->pair_link->tag;
+                // link->tag already holds the restored receive tag
 
                 link->defaultTimeBase = 1;
                 link->id              = link->pair_link->getId();
